@@ -1,0 +1,128 @@
+# Model Card: Credit Card Fraud Detection (MLP)
+
+
+---
+
+## Model Details
+
+- **Name:** Credit Card Fraud Detection — MLP at Cost-Sensitive Threshold
+- **Version:** 1.0 (May 2026)
+- **Type:** Binary classifier — Multi-Layer Perceptron (feed-forward neural network)
+- **Architecture:** Two hidden layers (32 → 16 units), ReLU activations, Adam optimiser, early stopping
+- **Decision rule:** A transaction is flagged as fraud when `predict_proba(fraud) ≥ 0.028`
+- **Framework:** scikit-learn 1.x (`MLPClassifier`), wrapped in an `imblearn` pipeline
+- **Authors:** Machine Learning Foundations group project, IE University
+- **Licence:** Course project — for educational use
+- **Contact:** See repository on GitHub
+
+---
+
+## Intended Use
+
+**Primary intended use:** Educational demonstration of an imbalanced binary-classification pipeline for credit-card fraud detection, including data preprocessing, model comparison, cost-sensitive threshold tuning, and interpretability analysis.
+
+**Primary intended users:** Students, instructors, and other practitioners studying applied machine learning, imbalanced-class problems, or cost-sensitive evaluation.
+
+**Out-of-scope uses:** This model is **not** suitable for production deployment in a real payments system. It was trained on a single two-day snapshot of European cardholder data from 2013 with anonymised PCA-transformed features, and has not been validated on any other distribution. Any production deployment would require fresh training data, ongoing monitoring, drift detection, and bias auditing.
+
+---
+
+## Training Data
+
+| | |
+|---|---|
+| Dataset | ULB Credit Card Fraud Detection (public, available on Kaggle) |
+| Period covered | Two days, September 2013 |
+| Total records | 284,807 transactions |
+| Fraud rate | 0.173% (492 fraud cases) |
+| Training split | 199,364 transactions (70%), stratified by class |
+| Validation split | 42,721 transactions (15%) — used for model and threshold selection |
+| Test split | 42,722 transactions (15%) — used once for final evaluation |
+
+Features `V1`–`V28` are anonymised PCA components produced by the dataset providers to protect cardholder privacy. `Time` was transformed into a cyclical hour-of-day signal (`sin`/`cos`) and `Amount` was transformed by `log1p` to reduce skew. All features were standardised inside the pipeline.
+
+---
+
+## Evaluation Metrics
+
+Because the positive (fraud) class is extremely rare, **accuracy is not used as a primary metric** — a model predicting "legitimate" for every transaction would score 99.83% accuracy while detecting zero fraud. The following metrics were prioritised:
+
+- **PR-AUC** (area under the precision-recall curve) — primary ranking metric for the rare positive class
+- **Recall** — fraction of true fraud cases caught
+- **Precision** — fraction of fraud alerts that are actually fraud
+- **F1-score** — harmonic mean of precision and recall
+- **Expected cost** — business-oriented metric using a 1:100 false-positive : false-negative cost ratio
+- **ROC-AUC** — reported but de-emphasised due to saturation on imbalanced data
+
+---
+
+## Quantitative Performance
+
+Held-out test set (n = 42,722; 74 actual fraud cases):
+
+| Setting | Recall | Precision | F1 | ROC-AUC | PR-AUC | TP | FN | FP | TN | Total cost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Default threshold (0.5) | 70.3% | 89.7% | 0.788 | 0.965 | 0.812 | 52 | 22 | 6 | 42,642 | 2,206 |
+| **Cost-sensitive (0.028)** | **85.1%** | 43.4% | 0.575 | 0.965 | 0.812 | **63** | **11** | 82 | 42,566 | **1,182** |
+
+The cost-sensitive operating point catches 11 additional frauds compared with the default threshold, at the price of 76 additional false alarms — a trade favoured under the assumed cost ratio.
+
+---
+
+## Top Predictors
+
+Permutation-importance analysis on the validation set identifies the following features as most influential (drop in PR-AUC when shuffled):
+
+| Rank | Feature | Importance |
+|:---:|---|---:|
+| 1 | V14 | 0.305 |
+| 2 | V4 | 0.073 |
+| 3 | V12 | 0.056 |
+| 4 | V17 | 0.044 |
+| 5 | V16 | 0.039 |
+| 6 | V10 | 0.037 |
+| 7 | V7 | 0.031 |
+| 8 | V3 | 0.030 |
+
+These align with the unsupervised correlations identified during EDA, supporting confidence that the model captures real signal rather than algorithm-specific artefacts. Time-of-day features (`Hour_sin`, `Hour_cos`) contribute modestly.
+
+---
+
+## Limitations
+
+- **Anonymised features.** Predictors `V1`–`V28` are PCA components without semantic labels; interpretability is structural (which components matter) rather than semantic (which behaviours matter).
+- **Two-day snapshot.** The training data covers only September 2013; fraud patterns drift over time and the model has no mechanism for adapting.
+- **Geographic scope.** Data comes from European cardholders only; performance on other regions is unknown.
+- **Cost ratio sensitivity.** The 1:100 cost assumption is illustrative. Real bank economics could shift the optimal threshold and reshuffle model rankings.
+- **Reproducibility caveat.** The neural-network training is stochastic; while `random_state` is fixed, exact reproduction across hardware is not guaranteed.
+- **Sample-size caveat.** The test set contains only 74 fraud cases, so individual-metric uncertainty is high (a single misclassified fraud changes recall by 1.4 percentage points).
+- **No human-review loop.** This model assumes a downstream review queue; it is not designed for fully automated transaction blocking.
+
+---
+
+## Ethical Considerations
+
+- **False positives are not cost-free.** A flagged legitimate transaction can erode customer trust, particularly if it disproportionately affects a specific demographic or geographic group. The anonymised feature set in this dataset prevents disparate-impact analysis; a production deployment would require demographic-bias auditing before launch.
+- **Privacy.** The training data was anonymised before release. Any production system retraining on real data must comply with applicable financial privacy regulations (GDPR, PCI-DSS, etc.).
+- **Human oversight.** Automated fraud decisions can lock customers out of their accounts. The model is intended to flag transactions for human review, not to make final action decisions autonomously.
+- **Concept drift.** Adversarial actors adapt their tactics. A deployed system must be monitored for falling recall over time and retrained on a regular schedule.
+
+---
+
+## Caveats and Recommendations
+
+If using this work as a starting point for further study or development:
+
+1. **Re-validate cost assumptions.** Replace the illustrative 1:100 ratio with realistic operational costs from the deployment context.
+2. **Stratify interpretation samples.** Ensure SHAP/explanation samples include fraud cases proportionally — random sampling can yield zero positives on highly imbalanced data.
+3. **Adopt repeated stratified cross-validation** to quantify metric variance for the rare positive class.
+4. **Report a frontier of operating points** rather than a single threshold, so stakeholders can select the precision-recall trade-off appropriate to their context.
+5. **Plan for monitoring and retraining** before any deployment.
+
+---
+
+## References
+
+- Mitchell, M., Wu, S., Zaldivar, A., Barnes, P., Vasserman, L., Hutchinson, B., Spitzer, E., Raji, I. D., & Gebru, T. (2019). *Model cards for model reporting.* Proceedings of FAT* '19.
+- Pozzolo, A. D., Caelen, O., Johnson, R. A., & Bontempi, G. (2015). *Calibrating probability with undersampling for unbalanced classification.* IEEE Symposium on Computational Intelligence and Data Mining.
+- Chawla, N. V., Bowyer, K. W., Hall, L. O., & Kegelmeyer, W. P. (2002). *SMOTE: Synthetic minority over-sampling technique.* Journal of Artificial Intelligence Research, 16, 321–357.
